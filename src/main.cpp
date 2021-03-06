@@ -2,6 +2,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_ADS1015.h>
 #include <EEPROM.h>
+#include <RunningAverage.h>
 #include <SPI.h>
 #include <Wire.h>
 
@@ -32,8 +33,8 @@ struct settings {
 
 settings default_settings() {
   settings s;
-  s.mv_max = 1.5;
-  s.mv_min = 0.7;
+  s.mv_max = 15.0;
+  s.mv_min = 7.0;
   s.avg_length_ms = 1000;
   s.calibration_factor = 0.021;
   s.sample_delay_ms = 100;
@@ -55,6 +56,7 @@ void display_main(String message){
   display.setTextColor(WHITE,BLACK);
   display.setTextSize(4);
   display.print(message);
+  Serial.println(message);
 }
 
 void display_info(String message) {
@@ -66,6 +68,7 @@ void display_info(String message) {
 
 input prev_input;
 settings system_settings;
+RunningAverage RA(10); //TODO: Base on settings
   
 void setup() {
   Serial.begin(9600);
@@ -89,21 +92,38 @@ void setup() {
   else {
     EEPROM.get(SETTINGS_LOCATION,system_settings);
   }
+  RA.clear();
   display.clearDisplay();
   display.display();
 }
 
+String prev_message = "";
+
 void loop() {
   input cur_input = read_input();
-  float o2_percent = cur_input.o2_mv * system_settings.calibration_factor * 100;
+  RA.addValue(cur_input.o2_mv);
+  float mv = RA.getAverage();
+
+  float o2_percent = mv * system_settings.calibration_factor * 100;
+  String message = "";
+  
   if(cur_input.button == LOW && cur_input.button != prev_input.button) {
-    system_settings.calibration_factor = 0.209/cur_input.o2_mv;
+    system_settings.calibration_factor = 0.209/mv;
     EEPROM.put(SETTINGS_LOCATION,system_settings);
-    display_info("=CAL=");
+    message = "=CAL=";
   }
-  display.clearDisplay();
-  display_main(String(o2_percent,1) + "%");
-  display.display();
+
+  else if(cur_input.o2_mv > system_settings.mv_max || cur_input.o2_mv < system_settings.mv_min) message = "CELL!";
+  else if (o2_percent < 0.0 || o2_percent > 99.9) message = "CAL!";
+  else message = String(o2_percent,1) + "%";
+  if(message != prev_message) {
+    display.clearDisplay();
+    display_main(message);
+    display.display();
+  }
+
   prev_input = cur_input;
+  prev_message = message;
+  if(cur_input.button == LOW) while(read_input().button == LOW) {} //Wait for button release
   delay(system_settings.sample_delay_ms);
 }
