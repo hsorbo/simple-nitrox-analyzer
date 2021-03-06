@@ -13,11 +13,21 @@
 #define OLED_RESET        4 
 #define SCREEN_ADDRESS    0x3C
 
+#define SCREEN_SECTION_HEADER 0
+#define SCREEN_SECTION_NORMAL 16
+
+
+struct input {
+  float o2_mv;
+  byte button;
+};
+
 struct settings {
   float mv_min;
   float mv_max;
   float calibration_factor;
   float avg_length_ms;
+  float sample_delay_ms;
 };
 
 settings default_settings() {
@@ -25,25 +35,38 @@ settings default_settings() {
   s.mv_max = 1.5;
   s.mv_min = 0.7;
   s.avg_length_ms = 1000;
-  s.calibration_factor = 47.3;
+  s.calibration_factor = 0.021;
+  s.sample_delay_ms = 100;
   return s;
 }
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_ADS1115 ads(0x48);
 
-void display_info(String message)
-{
-  display.clearDisplay();
-  display.setCursor(0,0);  
+input read_input() {
+  input i;
+  i.o2_mv = abs(ads.readADC_Differential_0_1() * 0.0625F);
+  i.button = digitalRead(BUTTON_PIN);
+  return i;
+}
+
+void display_main(String message){
+  display.setCursor(0,SCREEN_SECTION_NORMAL);
   display.setTextColor(WHITE,BLACK);
-  display.println(message);
-  Serial.println(message);
+  display.setTextSize(4);
+  display.print(message);
+}
+
+void display_info(String message) {
+  display.clearDisplay();
+  display_main(message);
   display.display();
   delay(1000);
 }
 
-
+input prev_input;
+settings system_settings;
+  
 void setup() {
   Serial.begin(9600);
 
@@ -57,25 +80,30 @@ void setup() {
   ads.begin();
 
   pinMode(BUTTON_PIN,INPUT_PULLUP);
-  settings settings;
-  if(digitalRead(BUTTON_PIN) == LOW) {
-    settings = default_settings();
-    EEPROM.put(SETTINGS_LOCATION,settings);
-    display_info("Reset");
+  prev_input = read_input();
+  if(prev_input.button == LOW) {
+    system_settings = default_settings();
+    EEPROM.put(SETTINGS_LOCATION,system_settings);
+    display_info("RESET");
   }
   else {
-    EEPROM.get(SETTINGS_LOCATION,settings);
+    EEPROM.get(SETTINGS_LOCATION,system_settings);
   }
-  
   display.clearDisplay();
   display.display();
 }
 
 void loop() {
+  input cur_input = read_input();
+  float o2_percent = cur_input.o2_mv * system_settings.calibration_factor * 100;
+  if(cur_input.button == LOW && cur_input.button != prev_input.button) {
+    system_settings.calibration_factor = 0.209/cur_input.o2_mv;
+    EEPROM.put(SETTINGS_LOCATION,system_settings);
+    display_info("=CAL=");
+  }
   display.clearDisplay();
-  display.setCursor(0,0);  
-  display.setTextColor(WHITE,BLACK);
-  display.println(abs(ads.readADC_Differential_0_1() * 0.0625F));
+  display_main(String(o2_percent,1) + "%");
   display.display();
-  delay(100);
+  prev_input = cur_input;
+  delay(system_settings.sample_delay_ms);
 }
