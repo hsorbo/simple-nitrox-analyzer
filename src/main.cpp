@@ -6,7 +6,7 @@
 #include <SPI.h>
 #include <Wire.h>
 
-#define BUTTON_PIN        2
+#define BUTTON_PIN        9
 #define SETTINGS_LOCATION 0
 
 #define SCREEN_WIDTH      128
