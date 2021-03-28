@@ -24,8 +24,8 @@ struct input {
 };
 
 struct settings {
-  float mv_min;
-  float mv_max;
+  float mv_air_min;
+  float mv_air_max;
   float calibration_factor;
   float avg_length_ms;
   float sample_delay_ms;
@@ -33,8 +33,8 @@ struct settings {
 
 settings default_settings() {
   settings s;
-  s.mv_max = 15.0;
-  s.mv_min = 7.0;
+  s.mv_air_max = 15.0;
+  s.mv_air_min = 7.0;
   s.avg_length_ms = 1000;
   s.calibration_factor = 0.021;
   s.sample_delay_ms = 100;
@@ -108,12 +108,18 @@ void loop() {
   String message = "";
   
   if(cur_input.button == LOW && cur_input.button != prev_input.button) {
-    system_settings.calibration_factor = 0.209/mv;
-    EEPROM.put(SETTINGS_LOCATION,system_settings);
-    message = "=CAL=";
+    if(cur_input.o2_mv > system_settings.mv_air_max || cur_input.o2_mv < system_settings.mv_air_min) 
+    {
+      message = "CELL!";
+    }
+    else
+    {
+      system_settings.calibration_factor = 0.209/mv;
+      EEPROM.put(SETTINGS_LOCATION,system_settings);
+      message = "=CAL=";
+    }
   }
 
-  else if(cur_input.o2_mv > system_settings.mv_max || cur_input.o2_mv < system_settings.mv_min) message = "CELL!";
   else if (o2_percent < 0.0 || o2_percent > 99.9) message = "CAL!";
   else message = String(o2_percent,1) + "%";
   if(message != prev_message) {
